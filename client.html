@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Lyra WebRTC Voice + Text (PeerJS)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'glass-bg': 'rgba(255, 255, 255, 0.1)',
+            'glass-border': 'rgba(255, 255, 255, 0.2)',
+            'glass-text': 'rgba(255, 255, 255, 0.9)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+    }
+    
+    .glass {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+    }
+    
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+    }
+    
+    .glass-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+    }
+    
+    .chat-bubble-you {
+      background: rgba(59, 130, 246, 0.3);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    
+    .chat-bubble-peer {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .voice-btn {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      transition: all 0.3s ease;
+    }
+    
+    .voice-btn.mute {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .voice-btn.unmute {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    
+    .status-indicator.connected {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+    
+    .status-indicator.disconnected {
+      background: #ef4444;
+    }
+  </style>
+</head>
+<body class="text-glass-text">
+  <div class="container mx-auto px-4 py-8 max-w-2xl">
+    <h1 class="text-3xl md:text-4xl font-bold text-center mb-8 text-white">Lyra</h1>
+    
+    <div class="instructions glass p-6 mb-6">
+      <h3 class="font-semibold text-lg mb-3 text-white">How to use:</h3>
+      <ol class="list-decimal pl-5 space-y-2">
+        <li>Set your username</li>
+        <li>Share your Peer ID with a friend</li>
+        <li>Enter your friend's Peer ID in the input field</li>
+        <li>Click Connect to establish a connection</li>
+        <li>Start chatting or making voice calls!</li>
+      </ol>
+    </div>
+    
+    <div class="status glass p-4 mb-6 text-center font-medium">
+      <span id="status" class="disconnected">Disconnected</span>
+    </div>
+    
+    <div class="section glass p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4 text-white">User Setup</h2>
+      <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input 
+          type="text" 
+          id="username" 
+          placeholder="Your username" 
+          value="User"
+          class="flex-1 px-4 py-3 rounded-xl bg-black/20 border border-glass-border text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button 
+          id="setUsernameBtn" 
+          class="glass-btn px-6 py-3 rounded-xl font-medium text-white hover:bg-white/20 transition-colors"
+        >
+          Set Username
+        </button>
+      </div>
+      
+      <div class="text-center p-4 rounded-xl bg-black/20">
+        <div class="text-sm text-gray-400">Your Peer ID:</div>
+        <div id="myId" class="font-mono text-white break-all">Generating...</div>
+      </div>
+    </div>
+    
+    <div class="section glass p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4 text-white">Connection</h2>
+      <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input 
+          type="text" 
+          id="targetId" 
+          placeholder="Enter peer ID to connect" 
+          class="flex-1 px-4 py-3 rounded-xl bg-black/20 border border-glass-border text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button 
+          id="connectBtn" 
+          class="glass-btn px-6 py-3 rounded-xl font-medium text-white hover:bg-white/20 transition-colors"
+        >
+          Connect
+        </button>
+        <button 
+          id="disconnectBtn" 
+          disabled 
+          class="glass-btn px-6 py-3 rounded-xl font-medium text-white hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Disconnect
+        </button>
+      </div>
+      
+      <div class="flex items-center justify-center gap-3">
+        <div class="status-indicator disconnected" id="connectionIndicator"></div>
+        <span id="connectionStatus">Not connected</span>
+      </div>
+    </div>
+    
+    <div class="section glass p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4 text-white">Chat</h2>
+      <div 
+        id="chat" 
+        class="h-64 overflow-y-auto p-4 rounded-xl bg-black/10 mb-4 flex flex-col gap-3"
+      ></div>
+      <div class="flex gap-2">
+        <input 
+          type="text" 
+          id="msgInput" 
+          placeholder="Type a message..." 
+          class="flex-1 px-4 py-3 rounded-xl bg-black/20 border border-glass-border text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button 
+          id="sendBtn" 
+          disabled 
+          class="glass-btn px-6 py-3 rounded-xl font-medium text-white hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+    
+    <div class="section glass p-6">
+      <h2 class="text-xl font-semibold mb-4 text-white">Voice</h2>
+      <audio id="remoteAudio" class="w-full rounded-xl" autoplay controls></audio>
+      <div class="flex justify-center gap-4 mt-4">
+        <button class="voice-btn mute" id="toggleMute">🎤</button>
+        <button class="voice-btn unmute" id="startVoice">▶️</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script>
+    // DOM Elements
+    const myIdElement = document.getElementById('myId');
+    const usernameElement = document.getElementById('username');
+    const setUsernameBtn = document.getElementById('setUsernameBtn');
+    const targetIdElement = document.getElementById('targetId');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const msgInput = document.getElementById('msgInput');
+    const chatElement = document.getElementById('chat');
+    const remoteAudio = document.getElementById('remoteAudio');
+    const statusElement = document.getElementById('status');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const connectionIndicator = document.getElementById('connectionIndicator');
+    const toggleMuteBtn = document.getElementById('toggleMute');
+    const startVoiceBtn = document.getElementById('startVoice');
+    
+    // Variables
+    let peer = null;
+    let conn = null;
+    let currentCall = null;
+    let localStream = null;
+    let isMuted = false;
+    let connectedPeerId = null;
+    let currentUsername = 'User';
+    
+    // Initialize PeerJS
+    function initPeer() {
+      peer = new Peer({
+        // Using PeerJS cloud server (free for basic usage)
+        config: {
+          'iceServers': [
+            { urls: 'stun:stun.l.google.com:19302' }
+          ]
+        }
+      });
+      
+      peer.on('open', (id) => {
+        myIdElement.textContent = id;
+        statusElement.textContent = 'Connected to PeerJS server';
+        statusElement.classList.remove('disconnected');
+        statusElement.classList.add('connected');
+        statusElement.classList.remove('text-red-400');
+        statusElement.classList.add('text-green-400');
+      });
+      
+      peer.on('connection', (connection) => {
+        handleConnection(connection);
+      });
+      
+      peer.on('call', (call) => {
+        // Answer the call and get the remote stream
+        call.answer(localStream);
+        setupCall(call);
+      });
+      
+      peer.on('error', (err) => {
+        console.error('Peer error:', err);
+        statusElement.textContent = `Error: ${err.message}`;
+        statusElement.classList.remove('connected');
+        statusElement.classList.add('disconnected');
+        statusElement.classList.remove('text-green-400');
+        statusElement.classList.add('text-red-400');
+      });
+    }
+    
+    // Handle incoming connection
+    function handleConnection(connection) {
+      if (conn) {
+        conn.close();
+      }
+      
+      conn = connection;
+      connectedPeerId = connection.peer; // Store the connected peer's ID
+      setupConnection();
+    }
+    
+    // Setup data connection
+    function setupConnection() {
+      conn.on('open', () => {
+        sendBtn.disabled = false;
+        connectionStatus.textContent = `Connected to ${connectedPeerId}`;
+        connectionIndicator.classList.remove('disconnected');
+        connectionIndicator.classList.add('connected');
+        statusElement.textContent = 'Connected to peer';
+        statusElement.classList.remove('disconnected');
+        statusElement.classList.add('connected');
+        statusElement.classList.remove('text-red-400');
+        statusElement.classList.add('text-green-400');
+      });
+      
+      conn.on('data', (data) => {
+        if (typeof data === 'object' && data.type === 'chat') {
+          // When receiving a message, the sender is the connected peer
+          addMessageToChat(data.sender, data.message, data.timestamp);
+        }
+      });
+      
+      conn.on('close', () => {
+        sendBtn.disabled = true;
+        connectionStatus.textContent = 'Disconnected from peer';
+        connectionIndicator.classList.remove('connected');
+        connectionIndicator.classList.add('disconnected');
+        statusElement.textContent = 'Disconnected from peer';
+        statusElement.classList.remove('connected');
+        statusElement.classList.add('disconnected');
+        statusElement.classList.remove('text-green-400');
+        statusElement.classList.add('text-red-400');
+        connectedPeerId = null;
+      });
+      
+      conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        statusElement.textContent = `Connection error: ${err.message}`;
+      });
+    }
+    
+    // Setup call handling
+    function setupCall(call) {
+      if (currentCall) {
+        currentCall.close();
+      }
+      
+      currentCall = call;
+      
+      call.on('stream', (stream) => {
+        remoteAudio.srcObject = stream;
+      });
+      
+      call.on('close', () => {
+        remoteAudio.srcObject = null;
+      });
+      
+      call.on('error', (err) => {
+        console.error('Call error:', err);
+      });
+    }
+    
+    // Add message to chat
+    function addMessageToChat(sender, message, timestamp) {
+      const chatContainer = document.getElementById('chat');
+      const messageElement = document.createElement('div');
+      
+      // Determine if this message is from you or the peer
+      const isFromYou = sender === currentUsername;
+      messageElement.classList.add(
+        'max-w-[80%]', 
+        'p-3', 
+        'rounded-2xl', 
+        'text-white'
+      );
+      
+      if (isFromYou) {
+        messageElement.classList.add('chat-bubble-you', 'ml-auto');
+      } else {
+        messageElement.classList.add('chat-bubble-peer', 'mr-auto');
+      }
+      
+      const timeString = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      messageElement.innerHTML = `
+        <div class="font-semibold text-sm mb-1">${sender}</div>
+        <div class="text-white">${message}</div>
+        <div class="text-xs opacity-70 mt-1 text-right">${timeString}</div>
+      `;
+      
+      chatContainer.appendChild(messageElement);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    // Get local media stream
+    async function getLocalStream() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        return localStream;
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+        alert('Could not access microphone. Please ensure you have a microphone and have granted permission.');
+        return null;
+      }
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      initPeer();
+      
+      // Get local stream on initial load
+      await getLocalStream();
+      
+      // Event listeners
+      setUsernameBtn.addEventListener('click', () => {
+        const newUsername = usernameElement.value.trim();
+        if (newUsername) {
+          currentUsername = newUsername;
+          alert(`Username set to: ${currentUsername}`);
+        } else {
+          alert('Please enter a username');
+        }
+      });
+      
+      connectBtn.addEventListener('click', async () => {
+        const targetId = targetIdElement.value.trim();
+        if (!targetId) {
+          alert('Please enter a peer ID');
+          return;
+        }
+        
+        if (conn) {
+          conn.close();
+        }
+        
+        conn = peer.connect(targetId);
+        connectedPeerId = targetId; // Store the target peer's ID
+        setupConnection();
+      });
+      
+      disconnectBtn.addEventListener('click', () => {
+        if (conn) {
+          conn.close();
+          conn = null;
+        }
+        if (currentCall) {
+          currentCall.close();
+          currentCall = null;
+        }
+        sendBtn.disabled = true;
+        connectionStatus.textContent = 'Disconnected from peer';
+        connectionIndicator.classList.remove('connected');
+        connectionIndicator.classList.add('disconnected');
+        statusElement.textContent = 'Disconnected from peer';
+        statusElement.classList.remove('connected');
+        statusElement.classList.add('disconnected');
+        statusElement.classList.remove('text-green-400');
+        statusElement.classList.add('text-red-400');
+        connectedPeerId = null;
+      });
+      
+      sendBtn.addEventListener('click', () => {
+        const message = msgInput.value.trim();
+        if (message && conn && conn.open) {
+          const data = {
+            type: 'chat',
+            // Send current username when sending
+            sender: currentUsername,
+            message: message,
+            timestamp: new Date().getTime()
+          };
+          
+          conn.send(data);
+          // Add the message to your own chat view immediately
+          addMessageToChat(currentUsername, message, new Date().getTime());
+          msgInput.value = '';
+        }
+      });
+      
+      msgInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !sendBtn.disabled) {
+          sendBtn.click();
+        }
+      });
+      
+      toggleMuteBtn.addEventListener('click', () => {
+        if (localStream) {
+          isMuted = !isMuted;
+          localStream.getAudioTracks().forEach(track => {
+            track.enabled = !isMuted;
+          });
+          toggleMuteBtn.textContent = isMuted ? '🔇' : '🎤';
+          toggleMuteBtn.classList.toggle('mute', isMuted);
+          toggleMuteBtn.classList.toggle('unmute', !isMuted);
+        }
+      });
+      
+      startVoiceBtn.addEventListener('click', async () => {
+        if (!localStream) {
+          localStream = await getLocalStream();
+        }
+        
+        if (!localStream) return;
+        
+        if (!connectedPeerId) {
+          alert('Please connect to a peer first');
+          return;
+        }
+        
+        // Create call
+        const call = peer.call(connectedPeerId, localStream);
+        setupCall(call);
+      });
+    });
+  </script>
+</body>
+</html>
